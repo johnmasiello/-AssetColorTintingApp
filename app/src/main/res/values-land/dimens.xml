@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="image_horizontal_padding">15dp</dimen>
+    <dimen name="hexColorTextSize">25sp</dimen>
+    <dimen name="listTextSize">12sp</dimen>
+    <dimen name="sliderSpacer">27dp</dimen>
+</resources>

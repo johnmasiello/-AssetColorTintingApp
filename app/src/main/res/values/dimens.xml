@@ -1,0 +1,10 @@
+<resources>
+    <!-- Default screen margins, per the Android Design guidelines. -->
+    <dimen name="activity_horizontal_margin">4dp</dimen>
+    <dimen name="activity_vertical_margin">4dp</dimen>
+    <dimen name="hexColorTextSize">45sp</dimen>
+    <dimen name="listTextSize">15sp</dimen>
+    <dimen name="listRowPadding">15dp</dimen>
+    <dimen name="image_horizontal_padding">45dp</dimen>
+    <dimen name="image_vertical_padding">55dp</dimen>
+</resources>
