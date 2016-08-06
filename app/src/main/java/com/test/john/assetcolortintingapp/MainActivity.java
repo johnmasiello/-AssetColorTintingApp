@@ -1,7 +1,11 @@
 package com.test.john.assetcolortintingapp;
 
+import android.app.Activity;
+import android.content.ContentResolver;
 import android.content.Context;
+import android.content.Intent;
 import android.content.res.AssetManager;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -9,7 +13,9 @@ import android.graphics.Point;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.BitmapDrawable;
+import android.net.Uri;
 import android.os.Build;
+import android.provider.OpenableColumns;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.text.Html;
@@ -35,6 +41,7 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -52,6 +59,7 @@ public class MainActivity extends AppCompatActivity {
     private EnumMap<Channel, SeekBar> seekBars;
     private EnumMap<Channel, Point> toastOffsets;
     private ListView listView;
+    private ArrayAdapter<String> listAdapter;
     private ArrayList<Bitmap> imageAssets;
     private ArrayList<String> filenames;
     private EditText editText;
@@ -69,7 +77,9 @@ public class MainActivity extends AppCompatActivity {
     private int filenameIndex = -1;
     private static final String FILENAME_INDEX_KEY = "file_name_index";
     private static final String HEX_COLOR_KEY = "hex_color";
-    private Toast toast;
+    private Toast toast, openFileFailureToast;
+
+    private static final int IMAGE_SELECTED = 22;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -87,10 +97,6 @@ public class MainActivity extends AppCompatActivity {
         toastOffsets = new EnumMap<>(Channel.class);
         setToastOnSlidePosition();
 
-        getImageAssets();
-
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, R.layout.list_row, filenames);
-        listView.setAdapter(adapter);
 
         setHardwareAccelerated(image, false);
 
@@ -98,26 +104,33 @@ public class MainActivity extends AppCompatActivity {
         setSeekbars();
 
 
+        imageAssets = new ArrayList<>();
+        filenames = new ArrayList<>();
+        listAdapter = new ArrayAdapter<>(this, R.layout.list_row, filenames);
+        listView.setAdapter(listAdapter);
+
         if (savedInstanceState != null) {
 
             /** recover the color settings */
-            editText.setText(savedInstanceState.getString(HEX_COLOR_KEY));
+            String colorString = savedInstanceState.getString(HEX_COLOR_KEY);
+            editText.setText(colorString);
+            applyEditTextFormatting(colorString);
 
             /** recover the image */
             String filename = savedInstanceState.getString(FILENAME_INDEX_KEY);
 
-            if (filename != null) {
-
-                int i = 0;
-                for (String s : filenames) {
-                    if (s.equals(filename)) {
-                        filenameIndex = i;
-                        applyColorFilterUsingPorterDuffMode();
-                        break;
-                    }
-                    i++;
-                }
-            }
+//            if (filename != null) {
+//
+//                int i = 0;
+//                for (String s : filenames) {
+//                    if (s.equals(filename)) {
+//                        filenameIndex = i;
+//                        applyColorFilterUsingPorterDuffMode();
+//                        break;
+//                    }
+//                    i++;
+//                }
+//            }
         }
 
         setOnClickListenerForListView();
@@ -239,10 +252,85 @@ public class MainActivity extends AppCompatActivity {
             editText.setText(hex_color_reset_string);
             applyColorFilterUsingPorterDuffMode();
             return true;
+        } else if (id == R.id.openImage) {
+
+            Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+            intent.setType("image/*");
+
+            // Do this if you need to be able to open the returned URI as a stream
+            // (for example here to read the image data).
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+
+            Intent finalIntent = Intent.createChooser(intent, "Select image");
+
+            startActivityForResult(finalIntent, IMAGE_SELECTED);
         }
 
         return super.onOptionsItemSelected(item);
     }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+
+        if (requestCode == IMAGE_SELECTED) {
+            if(resultCode == Activity.RESULT_OK){
+
+                InputStream inputStream = null;
+
+                int indexOfFirstFileAdded = imageAssets.size();
+
+                try {
+
+                    Uri uri = data.getData();
+                    inputStream = getContentResolver().openInputStream(uri);
+
+                    Bitmap b = BitmapFactory.decodeStream(inputStream);
+
+                    if (b == null) {
+                        Log.v("DEBUG", "Error decoding file");
+
+                    } else {
+
+                        imageAssets.add(b);
+
+                        // Get the filename associated with the inputStream, from the Uri
+                        Cursor returnCursor = getContentResolver().query(uri, null, null, null, null);
+                        if (returnCursor != null) {
+
+                            int nameIndex = returnCursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                            returnCursor.moveToFirst();
+
+                            filenames.add(returnCursor.getString(nameIndex));
+                            returnCursor.close();
+                        }
+                    }
+
+                    // Display the first file that was just added, or if a single file was opened, just that one
+                    filenameIndex = indexOfFirstFileAdded;
+                    listAdapter.notifyDataSetInvalidated();
+                    applyColorFilterUsingPorterDuffMode();
+                }
+                catch (FileNotFoundException e) {
+                    e.printStackTrace();
+                    openFileFailureToast = Toast.makeText(getApplicationContext(), "File could not be opened", Toast.LENGTH_SHORT);
+                    openFileFailureToast.show();
+                }
+                finally {
+                    if (inputStream != null) {
+                        try {
+                            inputStream.close();
+                        }
+                        catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }
+            }
+            if (resultCode == Activity.RESULT_CANCELED) {
+                Log.v("DEBUG", "file chooser was canceled");
+            }
+        }
+    }//onActivityResult
 
     @Override
     public void onSaveInstanceState(Bundle outState) {
@@ -250,15 +338,20 @@ public class MainActivity extends AppCompatActivity {
 
         outState.putString(HEX_COLOR_KEY, editText.getText().toString());
         outState.putString(FILENAME_INDEX_KEY,
-                filenameIndex != -1 ? filenames.get(filenameIndex) : null);
+                filenameIndex != -1 && filenameIndex < filenames.size() ? filenames.get(filenameIndex) : null);
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+
+        if (openFileFailureToast!=null)  openFileFailureToast.cancel();
     }
 
     /** <p>Precondtion: set filenameIndex, set editText</p>
      *
      */
     public void applyColorFilterUsingPorterDuffMode() {
-
-        if (filenameIndex == -1) return;
 
         CharSequence c = editText.getText();
         Log.d("DEBUG", "edit text string content = "+c);
@@ -301,26 +394,29 @@ public class MainActivity extends AppCompatActivity {
 
             Log.v("DEBUG", "color = " + color);
 
-            Bitmap bitmap = imageAssets.get(filenameIndex);
-            BitmapDrawable drawable = new BitmapDrawable(bitmap);
+            /** reformat the text in the editText */
+            c = "#" +  (alpha < 0x10 ? '0' : "") + Integer.toHexString(alpha).toUpperCase() +
+                    (red   < 0x10 ? '0' : "") + Integer.toHexString(red).toUpperCase() +
+                    (green < 0x10 ? '0' : "") + Integer.toHexString(green).toUpperCase()+
+                    (blue  < 0x10 ? '0' : "") + Integer.toHexString(blue).toUpperCase();
 
-            drawable.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.SRC_ATOP));
+            Log.v("DEBUG", "new color string " + c);
+            editText.setText(c);
+            applyEditTextFormatting(c);
+
+            if (filenameIndex!=-1) {
+
+                Bitmap bitmap = imageAssets.get(filenameIndex);
+                BitmapDrawable drawable = new BitmapDrawable(bitmap);
+
+                drawable.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.SRC_ATOP));
 //            ColorMatrix colorMatrix = new ColorMatrix();
 //            colorMatrix.setRotate(0, 90);
 //
 //            drawable.setColorFilter(new ColorMatrixColorFilter(colorMatrix));
 
-            image.setImageDrawable(drawable);
-
-            /** reformat the text in the editText */
-             c = "#" +  (alpha < 0x10 ? '0' : "") + Integer.toHexString(alpha).toUpperCase() +
-                        (red   < 0x10 ? '0' : "") + Integer.toHexString(red).toUpperCase() +
-                        (green < 0x10 ? '0' : "") + Integer.toHexString(green).toUpperCase()+
-                        (blue  < 0x10 ? '0' : "") + Integer.toHexString(blue).toUpperCase();
-
-            Log.v("DEBUG", "new color string " + c);
-            editText.setText(c);
-            applyEditTextFormatting(c);
+                image.setImageDrawable(drawable);
+            }
         }
     }
 
