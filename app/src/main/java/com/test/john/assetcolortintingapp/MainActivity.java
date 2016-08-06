@@ -15,6 +15,7 @@ import android.os.Bundle;
 import android.text.Html;
 import android.util.DisplayMetrics;
 import android.util.Log;
+import android.util.TypedValue;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -24,6 +25,7 @@ import android.view.Surface;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
@@ -128,6 +130,25 @@ public class MainActivity extends AppCompatActivity {
         setDoneTypingListener();
 
         editText.setSingleLine(true);
+
+        editText.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override
+            public void onFocusChange(View view, boolean focused) {
+                InputMethodManager keyboard = (InputMethodManager) getApplicationContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (focused) {
+                    keyboard.showSoftInput(editText, 0);
+
+                    // adjust layout
+//                    editText.setTextSize(TypedValue.COMPLEX_UNIT_PX, getResources().getDimension(R.dimen.hexStringTextSizeCondensed));
+                }
+                else {
+                    keyboard.hideSoftInputFromWindow(editText.getWindowToken(), 0);
+
+                    // adjust layout
+//                    editText.setTextSize(TypedValue.COMPLEX_UNIT_PX, getResources().getDimension(R.dimen.hexColorTextSize));
+                }
+            }
+        });
     }
 
     public static void setHardwareAccelerated(View view, boolean enabled){
@@ -317,7 +338,8 @@ public class MainActivity extends AppCompatActivity {
                                 // the user is done typing.
 
                                 applyColorFilterUsingPorterDuffMode();
-                                return false; // consume.
+                                editText.clearFocus();
+                                return true; // consume.
                             }
                         }
                         return false; // pass on to other listeners.
