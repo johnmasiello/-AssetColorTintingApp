@@ -64,7 +64,9 @@
             android:layout_alignParentStart="true"
             android:layout_toLeftOf="@+id/bar_icon"
             android:layout_toStartOf="@+id/bar_icon"
-            android:contentDescription="alpha" />
+            android:thumb="@drawable/thumb_image"
+            android:contentDescription="alpha"
+            style="lar"/>
 
         <ImageView
             android:layout_width="wrap_content"
@@ -91,6 +93,7 @@
             android:layout_alignParentStart="true"
             android:layout_toLeftOf="@+id/bar_icon2"
             android:layout_toStartOf="@+id/bar_icon2"
+            android:thumb="@drawable/thumb_image"
             android:contentDescription="red" />
 
         <ImageView
@@ -118,6 +121,7 @@
             android:layout_alignParentStart="true"
             android:layout_toLeftOf="@+id/bar_icon3"
             android:layout_toStartOf="@+id/bar_icon3"
+            android:thumb="@drawable/thumb_image"
             android:contentDescription="green" />
 
         <ImageView
@@ -145,6 +149,7 @@
             android:layout_alignParentStart="true"
             android:layout_toLeftOf="@+id/bar_icon4"
             android:layout_toStartOf="@+id/bar_icon4"
+            android:thumb="@drawable/thumb_image"
             android:contentDescription="blue" />
 
         <ImageView

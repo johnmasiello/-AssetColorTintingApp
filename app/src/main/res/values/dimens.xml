@@ -8,4 +8,5 @@
     <dimen name="listRowPadding">15dp</dimen>
     <dimen name="image_horizontal_padding">45dp</dimen>
     <dimen name="image_vertical_padding">55dp</dimen>
+    <dimen name="scrubberLength">20dp</dimen>
 </resources>
