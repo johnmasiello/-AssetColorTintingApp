@@ -1,7 +1,6 @@
 package com.test.john.assetcolortintingapp;
 
 import android.app.Activity;
-import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.AssetManager;
@@ -15,13 +14,13 @@ import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.BitmapDrawable;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Parcelable;
 import android.provider.OpenableColumns;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.text.Html;
 import android.util.DisplayMetrics;
 import android.util.Log;
-import android.util.TypedValue;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -60,6 +59,7 @@ public class MainActivity extends AppCompatActivity {
     private EnumMap<Channel, Point> toastOffsets;
     private ListView listView;
     private ArrayAdapter<String> listAdapter;
+    private ArrayList<Uri> imageUris;
     private ArrayList<Bitmap> imageAssets;
     private ArrayList<String> filenames;
     private EditText editText;
@@ -75,7 +75,8 @@ public class MainActivity extends AppCompatActivity {
 
     /** helper variables */
     private int filenameIndex = -1;
-    private static final String FILENAME_INDEX_KEY = "file_name_index";
+    private static final String IMAGE_URI_KEY = "image uris";
+    private static final String FILE_INDEX_KEY = "file_name_index";
     private static final String HEX_COLOR_KEY = "hex_color";
     private Toast toast, openFileFailureToast;
 
@@ -103,7 +104,6 @@ public class MainActivity extends AppCompatActivity {
         /** get holders to all of the seekBars and add listeners */
         setSeekbars();
 
-
         imageAssets = new ArrayList<>();
         filenames = new ArrayList<>();
         listAdapter = new ArrayAdapter<>(this, R.layout.list_row, filenames);
@@ -116,21 +116,21 @@ public class MainActivity extends AppCompatActivity {
             editText.setText(colorString);
             applyEditTextFormatting(colorString);
 
-            /** recover the image */
-            String filename = savedInstanceState.getString(FILENAME_INDEX_KEY);
+            imageUris = savedInstanceState.getParcelableArrayList(IMAGE_URI_KEY);
+            if (imageUris == null)
+                imageUris = new ArrayList<>();
 
-//            if (filename != null) {
-//
-//                int i = 0;
-//                for (String s : filenames) {
-//                    if (s.equals(filename)) {
-//                        filenameIndex = i;
-//                        applyColorFilterUsingPorterDuffMode();
-//                        break;
-//                    }
-//                    i++;
-//                }
-//            }
+            for (Uri uri : imageUris) {
+                fetchImageFromUri(uri);
+            }
+
+            /** recover the image */
+            filenameIndex = savedInstanceState.getInt(FILE_INDEX_KEY, -1);
+            applyColorFilterUsingPorterDuffMode();
+
+        }
+        else {
+            imageUris = new ArrayList<>();
         }
 
         setOnClickListenerForListView();
@@ -172,64 +172,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /** <p>load svgs</p>
-     *  <p>load file names</p>
-     *
-     */
-    private void getImageAssets() {
-        imageAssets = new ArrayList<>();
-
-        AssetManager assetManager = getAssets();
-        String[] filenames;
-        String fullPath = null;
-        String path = "stock_images";
-
-        try {
-            filenames = assetManager.list(path);
-        }
-        catch (IOException e) {
-            throw new RuntimeException("could not load assets");
-        }
-
-        InputStream bitmapIn = null;
-        Bitmap b;
-
-        for (String s : filenames) {
-            try {
-
-                fullPath = path + "/" + s;
-
-                bitmapIn = assetManager.open(fullPath);
-                b = BitmapFactory.decodeStream(bitmapIn);
-
-                if (b == null) {
-                    throw new IOException();
-                } else {
-                    imageAssets.add(b);
-                }
-
-            } catch (IOException e) {
-                e.printStackTrace();
-                Log.v("DEBUG", "fullPath");
-                throw new RuntimeException("could not load assets");
-            }
-            finally {
-                try {
-                    bitmapIn.close();
-                }
-                catch (IOException ioe) {
-                    ioe.printStackTrace();
-                    Log.v("DEBUG", "unable to close filestream for " + fullPath);
-                }
-                catch (NullPointerException np) {
-                    np.printStackTrace();
-                }
-            }
-        }
-
-        this.filenames = new ArrayList<>(Arrays.asList(filenames));
-    }
-
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         // Inflate the menu; this adds items to the action bar if it is present.
@@ -269,62 +211,76 @@ public class MainActivity extends AppCompatActivity {
         return super.onOptionsItemSelected(item);
     }
 
+    private boolean fetchImageFromUri(Uri uri) {
+
+        InputStream inputStream = null;
+
+        try {
+
+            inputStream = getContentResolver().openInputStream(uri);
+
+            Bitmap b = BitmapFactory.decodeStream(inputStream);
+
+            if (b == null) {
+                Log.v("DEBUG", "Error decoding file");
+                return false;
+
+            } else {
+
+
+                // Get the filename associated with the inputStream, from the Uri
+                Cursor returnCursor = getContentResolver().query(uri, null, null, null, null);
+                if (returnCursor != null) {
+
+                    int nameIndex = returnCursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                    returnCursor.moveToFirst();
+
+                    imageAssets.add(b);
+                    filenames.add(returnCursor.getString(nameIndex));
+                    returnCursor.close();
+
+                    return true;
+                }
+                return false;
+            }
+
+        }
+        catch (FileNotFoundException e) {
+            e.printStackTrace();
+            openFileFailureToast = Toast.makeText(getApplicationContext(), "File could not be opened", Toast.LENGTH_SHORT);
+            openFileFailureToast.show();
+            return false;
+        }
+        finally {
+            if (inputStream != null) {
+                try {
+                    inputStream.close();
+                }
+                catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
 
         if (requestCode == IMAGE_SELECTED) {
             if(resultCode == Activity.RESULT_OK){
 
-                InputStream inputStream = null;
 
                 int indexOfFirstFileAdded = imageAssets.size();
 
-                try {
+                Uri uri = data.getData();
+                if (fetchImageFromUri(uri))
+                    imageUris.add(uri);
 
-                    Uri uri = data.getData();
-                    inputStream = getContentResolver().openInputStream(uri);
-
-                    Bitmap b = BitmapFactory.decodeStream(inputStream);
-
-                    if (b == null) {
-                        Log.v("DEBUG", "Error decoding file");
-
-                    } else {
-
-                        imageAssets.add(b);
-
-                        // Get the filename associated with the inputStream, from the Uri
-                        Cursor returnCursor = getContentResolver().query(uri, null, null, null, null);
-                        if (returnCursor != null) {
-
-                            int nameIndex = returnCursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-                            returnCursor.moveToFirst();
-
-                            filenames.add(returnCursor.getString(nameIndex));
-                            returnCursor.close();
-                        }
-                    }
-
-                    // Display the first file that was just added, or if a single file was opened, just that one
-                    filenameIndex = indexOfFirstFileAdded;
-                    listAdapter.notifyDataSetInvalidated();
-                    applyColorFilterUsingPorterDuffMode();
-                }
-                catch (FileNotFoundException e) {
-                    e.printStackTrace();
-                    openFileFailureToast = Toast.makeText(getApplicationContext(), "File could not be opened", Toast.LENGTH_SHORT);
-                    openFileFailureToast.show();
-                }
-                finally {
-                    if (inputStream != null) {
-                        try {
-                            inputStream.close();
-                        }
-                        catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
+                // Display the first file that was just added, or if a single file was opened, just that one.
+                // If there are no image assets, then set the index = -1
+                filenameIndex = imageAssets.size() > 0 ? indexOfFirstFileAdded : -1;
+                listAdapter.notifyDataSetInvalidated();
+                applyColorFilterUsingPorterDuffMode();
             }
             if (resultCode == Activity.RESULT_CANCELED) {
                 Log.v("DEBUG", "file chooser was canceled");
@@ -337,8 +293,9 @@ public class MainActivity extends AppCompatActivity {
         super.onSaveInstanceState(outState);
 
         outState.putString(HEX_COLOR_KEY, editText.getText().toString());
-        outState.putString(FILENAME_INDEX_KEY,
-                filenameIndex != -1 && filenameIndex < filenames.size() ? filenames.get(filenameIndex) : null);
+        outState.putInt(FILE_INDEX_KEY, filenameIndex);
+
+        outState.putParcelableArrayList(IMAGE_URI_KEY, imageUris);
     }
 
     @Override
