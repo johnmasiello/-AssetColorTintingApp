@@ -1,9 +1,10 @@
 package com.test.john.assetcolortintingapp;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.res.AssetManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -14,8 +15,8 @@ import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.BitmapDrawable;
 import android.net.Uri;
 import android.os.Build;
-import android.os.Parcelable;
 import android.provider.OpenableColumns;
+import android.support.annotation.Nullable;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.text.Html;
@@ -44,7 +45,6 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.EnumMap;
 
 import static com.test.john.assetcolortintingapp.MainActivity.Channel.*;
@@ -120,8 +120,10 @@ public class MainActivity extends AppCompatActivity {
             if (imageUris == null)
                 imageUris = new ArrayList<>();
 
+            ContentResolver cr = getContentResolver();
+
             for (Uri uri : imageUris) {
-                fetchImageFromUri(uri);
+                fetchImage(uri, cr);
             }
 
             /** recover the image */
@@ -203,6 +205,10 @@ public class MainActivity extends AppCompatActivity {
             // (for example here to read the image data).
             intent.addCategory(Intent.CATEGORY_OPENABLE);
 
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+            }
+
             Intent finalIntent = Intent.createChooser(intent, "Select image");
 
             startActivityForResult(finalIntent, IMAGE_SELECTED);
@@ -211,13 +217,19 @@ public class MainActivity extends AppCompatActivity {
         return super.onOptionsItemSelected(item);
     }
 
-    private boolean fetchImageFromUri(Uri uri) {
+    private boolean fetchImage(@Nullable Uri uri, ContentResolver contentResolver) {
 
         InputStream inputStream = null;
 
+        if (uri == null) return false;
+
+        String returnType = contentResolver.getType(uri);
+
+        if (returnType == null || !returnType.startsWith("image/")) return false;
+
         try {
 
-            inputStream = getContentResolver().openInputStream(uri);
+            inputStream = contentResolver.openInputStream(uri);
 
             Bitmap b = BitmapFactory.decodeStream(inputStream);
 
@@ -229,7 +241,7 @@ public class MainActivity extends AppCompatActivity {
 
 
                 // Get the filename associated with the inputStream, from the Uri
-                Cursor returnCursor = getContentResolver().query(uri, null, null, null, null);
+                Cursor returnCursor = contentResolver.query(uri, null, null, null, null);
                 if (returnCursor != null) {
 
                     int nameIndex = returnCursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
@@ -269,12 +281,44 @@ public class MainActivity extends AppCompatActivity {
         if (requestCode == IMAGE_SELECTED) {
             if(resultCode == Activity.RESULT_OK){
 
+                ContentResolver cr = getContentResolver();
+                Uri uri;
 
+                // Used to determine which image to show in the image window
                 int indexOfFirstFileAdded = imageAssets.size();
 
-                Uri uri = data.getData();
-                if (fetchImageFromUri(uri))
-                    imageUris.add(uri);
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+
+                    ClipData clipData = data.getClipData();
+
+                    if (clipData != null) {
+
+                        for (int i = 0; i < clipData.getItemCount(); i++) {
+                            uri = clipData.getItemAt(i).getUri();
+
+                            if (fetchImage(uri, cr)) {
+
+                                imageUris.add(uri);
+                            }
+                        }
+                    } else {
+                        uri = data.getData();
+
+                        if (fetchImage(uri, cr)) {
+
+                            imageUris.add(uri);
+                        }
+                    }
+                }
+                else {
+                    uri = data.getData();
+
+                    if (fetchImage(uri, cr)) {
+
+                        imageUris.add(uri);
+                    }
+                }
 
                 // Display the first file that was just added, or if a single file was opened, just that one.
                 // If there are no image assets, then set the index = -1
