@@ -15,6 +15,7 @@ import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.BitmapDrawable;
 import android.net.Uri;
 import android.os.Build;
+import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.support.annotation.Nullable;
 import android.support.v7.app.AppCompatActivity;
@@ -73,7 +74,6 @@ public class MainActivity extends AppCompatActivity {
     private ListView listView;
     private ArrayAdapter<String> listAdapter;
     private ArrayList<Uri> imageUris;
-    private ArrayList<Bitmap> imageAssets;
     private ArrayList<String> filenames;
     private EditText editText;
     private ImageView image;
@@ -89,6 +89,7 @@ public class MainActivity extends AppCompatActivity {
     /** helper variables */
     private int filenameIndex = -1;
     private static final String IMAGE_URI_KEY = "image uris";
+    private static final String FILENAME_KEY = "file names";
     private static final String FILE_INDEX_KEY = "file_name_index";
     private static final String HEX_COLOR_KEY = "hex_color";
     private Toast toast, openFileFailureToast;
@@ -104,9 +105,9 @@ public class MainActivity extends AppCompatActivity {
         hex_color_reset_with_full_opacity = hex_color_reset_string.charAt(0)+"FF"+
                 hex_color_reset_string.substring(3, 9);
 
-        listView = (ListView) findViewById(R.id.select_dialog_listview);
-        image = (ImageView) findViewById(R.id.image);
-        editText = (EditText) findViewById(R.id.hex_input_box);
+        listView = findViewById(R.id.select_dialog_listview);
+        image = findViewById(R.id.image);
+        editText = findViewById(R.id.hex_input_box);
 
         toastOffsets = new EnumMap<>(Channel.class);
         setToastOnSlidePosition();
@@ -117,11 +118,6 @@ public class MainActivity extends AppCompatActivity {
         /** get holders to all of the seekBars and add listeners */
         setSeekbars();
 
-        imageAssets = new ArrayList<>();
-        filenames = new ArrayList<>();
-        listAdapter = new ArrayAdapter<>(this, R.layout.list_row, filenames);
-        listView.setAdapter(listAdapter);
-
         if (savedInstanceState != null) {
 
             /** recover the color settings */
@@ -130,23 +126,18 @@ public class MainActivity extends AppCompatActivity {
             applyEditTextFormatting(colorString);
 
             imageUris = savedInstanceState.getParcelableArrayList(IMAGE_URI_KEY);
-            if (imageUris == null)
-                imageUris = new ArrayList<>();
-
-            ContentResolver cr = getContentResolver();
-
-            for (Uri uri : imageUris) {
-                fetchImage(uri, cr);
-            }
+            filenames = savedInstanceState.getStringArrayList(FILENAME_KEY);
 
             /** recover the image */
             filenameIndex = savedInstanceState.getInt(FILE_INDEX_KEY, -1);
             applyColorFilterUsingPorterDuffMode();
 
         }
-        else {
-            imageUris = new ArrayList<>();
-        }
+        if (imageUris == null) imageUris = new ArrayList<>();
+        if (filenames == null) filenames = new ArrayList<>();
+
+        listAdapter = new ArrayAdapter<>(this, R.layout.list_row, filenames);
+        listView.setAdapter(listAdapter);
 
         setOnClickListenerForListView();
 
@@ -165,15 +156,9 @@ public class MainActivity extends AppCompatActivity {
                 InputMethodManager keyboard = (InputMethodManager) getApplicationContext().getSystemService(Context.INPUT_METHOD_SERVICE);
                 if (focused) {
                     keyboard.showSoftInput(editText, 0);
-
-                    // adjust layout
-//                    editText.setTextSize(TypedValue.COMPLEX_UNIT_PX, getResources().getDimension(R.dimen.hexStringTextSizeCondensed));
                 }
                 else {
                     keyboard.hideSoftInputFromWindow(editText.getWindowToken(), 0);
-
-                    // adjust layout
-//                    editText.setTextSize(TypedValue.COMPLEX_UNIT_PX, getResources().getDimension(R.dimen.hexColorTextSize));
                 }
             }
         });
@@ -230,62 +215,28 @@ public class MainActivity extends AppCompatActivity {
         return super.onOptionsItemSelected(item);
     }
 
-    private boolean fetchImage(@Nullable Uri uri, ContentResolver contentResolver) {
-
-        InputStream inputStream = null;
-
-        if (uri == null) return false;
-
-        String returnType = contentResolver.getType(uri);
-
-        if (returnType == null || !returnType.startsWith("image/")) return false;
-
+    private Bitmap fetchImage(@Nullable Uri uri) {
         try {
-
-            inputStream = contentResolver.openInputStream(uri);
-
-            Bitmap b = BitmapFactory.decodeStream(inputStream);
-
-            if (b == null) {
-                Log.v("DEBUG", "Error decoding file");
-                return false;
-
-            } else {
-
-
-                // Get the filename associated with the inputStream, from the Uri
-                Cursor returnCursor = contentResolver.query(uri, null, null, null, null);
-                if (returnCursor != null) {
-
-                    int nameIndex = returnCursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-                    returnCursor.moveToFirst();
-
-                    imageAssets.add(b);
-                    filenames.add(returnCursor.getString(nameIndex));
-                    returnCursor.close();
-
-                    return true;
-                }
-                return false;
-            }
-
-        }
-        catch (FileNotFoundException e) {
+            return MediaStore.Images.Media.getBitmap(this.getContentResolver(), uri);
+        } catch (IOException e) {
             e.printStackTrace();
-            openFileFailureToast = Toast.makeText(getApplicationContext(), "File could not be opened", Toast.LENGTH_SHORT);
-            openFileFailureToast.show();
-            return false;
         }
-        finally {
-            if (inputStream != null) {
-                try {
-                    inputStream.close();
-                }
-                catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
+        return null;
+    }
+
+    private boolean fetchFileName(Uri uri) {
+        Cursor returnCursor = getContentResolver().query(uri, null, null, null, null);
+        if (returnCursor != null) {
+
+            int nameIndex = returnCursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+            returnCursor.moveToFirst();
+
+            filenames.add(returnCursor.getString(nameIndex));
+            returnCursor.close();
+
+            return true;
         }
+        return false;
     }
 
     @Override
@@ -293,12 +244,10 @@ public class MainActivity extends AppCompatActivity {
 
         if (requestCode == IMAGE_SELECTED) {
             if(resultCode == Activity.RESULT_OK){
-
-                ContentResolver cr = getContentResolver();
                 Uri uri;
 
                 // Used to determine which image to show in the image window
-                int indexOfFirstFileAdded = imageAssets.size();
+                int indexOfFirstFileAdded = imageUris.size();
 
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
@@ -310,32 +259,39 @@ public class MainActivity extends AppCompatActivity {
                         for (int i = 0; i < clipData.getItemCount(); i++) {
                             uri = clipData.getItemAt(i).getUri();
 
-                            if (fetchImage(uri, cr)) {
-
-                                imageUris.add(uri);
+                            if (fetchFileName(uri)) imageUris.add(uri);
+                            else {
+                                openFileFailureToast =
+                                        Toast.makeText(this,
+                                                "File could not be opened", Toast.LENGTH_SHORT);
+                                openFileFailureToast.show();
                             }
                         }
                     } else {
                         uri = data.getData();
-
-                        if (fetchImage(uri, cr)) {
-
-                            imageUris.add(uri);
+                        if (fetchFileName(uri)) imageUris.add(uri);
+                        else {
+                            openFileFailureToast =
+                                    Toast.makeText(this,
+                                            "File could not be opened", Toast.LENGTH_SHORT);
+                            openFileFailureToast.show();
                         }
                     }
                 }
                 else {
                     uri = data.getData();
-
-                    if (fetchImage(uri, cr)) {
-
-                        imageUris.add(uri);
+                    if (fetchFileName(uri)) imageUris.add(uri);
+                    else {
+                        openFileFailureToast =
+                                Toast.makeText(this,
+                                        "File could not be opened", Toast.LENGTH_SHORT);
+                        openFileFailureToast.show();
                     }
                 }
 
                 // Display the first file that was just added, or if a single file was opened, just that one.
                 // If there are no image assets, then set the index = -1
-                filenameIndex = imageAssets.size() > 0 ? indexOfFirstFileAdded : -1;
+                filenameIndex = imageUris.size() > 0 ? indexOfFirstFileAdded : -1;
                 listAdapter.notifyDataSetInvalidated();
                 applyColorFilterUsingPorterDuffMode();
             }
@@ -353,6 +309,7 @@ public class MainActivity extends AppCompatActivity {
         outState.putInt(FILE_INDEX_KEY, filenameIndex);
 
         outState.putParcelableArrayList(IMAGE_URI_KEY, imageUris);
+        outState.putStringArrayList(FILENAME_KEY, filenames);
     }
 
     @Override
@@ -420,16 +377,14 @@ public class MainActivity extends AppCompatActivity {
 
             if (filenameIndex!=-1) {
 
-                Bitmap bitmap = imageAssets.get(filenameIndex);
-                BitmapDrawable drawable = new BitmapDrawable(bitmap);
+                Bitmap bitmap = fetchImage(imageUris.get(filenameIndex));
 
-                drawable.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.SRC_ATOP));
-//            ColorMatrix colorMatrix = new ColorMatrix();
-//            colorMatrix.setRotate(0, 90);
-//
-//            drawable.setColorFilter(new ColorMatrixColorFilter(colorMatrix));
+                if (bitmap != null) {
+                    BitmapDrawable drawable = new BitmapDrawable(bitmap);
 
-                image.setImageDrawable(drawable);
+                    drawable.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.SRC_ATOP));
+                    image.setImageDrawable(drawable);
+                }
             }
         }
     }
